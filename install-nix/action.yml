@@ -1,0 +1,76 @@
+name: 'Install Nix'
+description: 'Installs Nix with nixos/nix-installer, after optional runner setup (disk room, KVM, user namespaces). Needs no Nix to run: plain bash and curl.'
+author: 'Lillecarl'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  installer-version:
+    description: 'nixos/nix-installer release to download. The release embeds its Nix, so this also pins which Nix gets installed.'
+    required: false
+    default: '2.35.2'
+  extra-conf:
+    description: 'Appended to the generated nix.conf, so a key named here wins over every default below.'
+    required: false
+    default: ''
+  experimental-features:
+    description: 'Written as experimental-features unless extra-conf already sets it. Empty writes nothing.'
+    required: false
+    default: 'nix-command flakes'
+  github-access-token:
+    description: 'Written as access-tokens for github.com unless extra-conf already sets it. Empty writes nothing. Defaults to the job token.'
+    required: false
+    default: ${{ github.token }}
+  trust-runner-user:
+    description: 'Write trusted-users = root <runner user>. A daemon ignores substituters from users it does not trust, so caches need this.'
+    required: false
+    default: 'true'
+  enable-kvm:
+    description: 'Open /dev/kvm to the runner user on Linux, before the install, so the installer detects the kvm system feature. x64 runners only.'
+    required: false
+    default: 'true'
+  allow-user-namespaces:
+    description: 'Loosen the AppArmor/sysctl policy that denies unprivileged user namespaces on Ubuntu. The Nix sandbox and passt need one.'
+    required: false
+    default: 'false'
+  free-disk-space:
+    description: 'Delete the toolchains and browsers the runner image ships before installing. Linux only.'
+    required: false
+    default: 'true'
+  case-sensitive:
+    description: 'Create the macOS Nix volume as case-sensitive APFS, so it behaves like the Linux store. No effect on Linux.'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Make room on the runner
+      if: runner.os == 'Linux' && inputs.free-disk-space == 'true'
+      shell: bash
+      run: ${{ github.action_path }}/scripts/free-disk-space.sh
+
+    - name: Enable KVM
+      if: runner.os == 'Linux' && inputs.enable-kvm == 'true'
+      shell: bash
+      run: ${{ github.action_path }}/scripts/enable-kvm.sh
+
+    - name: Allow unprivileged user namespaces
+      if: runner.os == 'Linux' && inputs.allow-user-namespaces == 'true'
+      shell: bash
+      run: ${{ github.action_path }}/scripts/allow-user-namespaces.sh
+
+    - name: Install Nix
+      shell: bash
+      env:
+        INPUT_INSTALLER_VERSION: ${{ inputs.installer-version }}
+        INPUT_EXTRA_CONF: ${{ inputs.extra-conf }}
+        INPUT_EXPERIMENTAL_FEATURES: ${{ inputs.experimental-features }}
+        INPUT_GITHUB_ACCESS_TOKEN: ${{ inputs.github-access-token }}
+        INPUT_TRUST_RUNNER_USER: ${{ inputs.trust-runner-user }}
+        INPUT_ENABLE_KVM: ${{ inputs.enable-kvm }}
+        INPUT_CASE_SENSITIVE: ${{ inputs.case-sensitive }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: ${{ github.action_path }}/scripts/install.sh
